@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "Just a plugin for native access to Google Sheets.",
   "cordova": {
-    "id": "cordova-plugin-google-sheets-api",
+    "id": "cordova-plugin-google-sheets",
     "platforms": [
       "android"
     ]
