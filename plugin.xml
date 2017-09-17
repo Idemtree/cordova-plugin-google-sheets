@@ -29,6 +29,11 @@
       <uses-permission android:name="android.permission.USE_CREDENTIALS" />
     </config-file>
     <source-file src="src/android/GoogleSheets.java" target-dir="src/org/sumaq/plugins" />
+    <config-file parent="/*" target="res/values/strings.xml">
+      <string name="google_play_services_request">%1$s requires Google Play Services. Please Install Google Play Services on your device and relaunch the app.
+      </string>
+      <string name="account_permission_request">%1$s needs to access your Google account (via Contacts).</string>
+    </config-file>
   </platform>
 
 </plugin>

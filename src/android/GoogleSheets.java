@@ -7,6 +7,7 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.support.annotation.NonNull;
@@ -45,18 +46,20 @@ import pub.devrel.easypermissions.EasyPermissions;
 
 public class GoogleSheets extends CordovaPlugin implements EasyPermissions.PermissionCallbacks {
   private static final String TAG = "GOOGLE-SHEETS PLUGIN";
+  private static final String MSG_REQUEST_GOOGLE_PLAY_SERVICES = "google_play_services_request";
+  private static final String MSG_REQUEST_ACCOUNT_PERMISSION = "account_permission_request";
   private static final String OPT_SIGN_IN = "signIn";
   private static final String OPT_SIGN_OUT = "signOut";
   private static final String OPT_GET_SHEET = "getSpreadsheet";
   private static final String OPT_UPDATE_SHEET = "updateSpreadsheetValues";
   private static final String OPT_UPDATE_CELL = "updateCell";
-  private static final String APP_NAME = "SheetsApiTest";
   static final int REQUEST_ACCOUNT_PICKER = 1000;
   static final int REQUEST_AUTHORIZATION = 1001;
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
   static final int REQUEST_PERMISSION_GET_ACCOUNTS = 1003;
   private static final String PREF_ACCOUNT_NAME = "accountName";
   private static final String[] SCOPES = {SheetsScopes.SPREADSHEETS};
+  private static String mApplicationName = null;
   private String mAccountName;
   private GoogleAccountCredential mCredential;
   private Activity mActivity;
@@ -70,6 +73,10 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     super.initialize(cordova, webView);
     mActivity = cordova.getActivity();
     mDeferredBuildClient = new AndroidDeferredObject();
+    mApplicationName =
+        mApplicationName == null
+            ? getApplicationName(mActivity.getApplicationContext())
+            : mApplicationName;
 
     mAccountName =
         mActivity.getPreferences(Context.MODE_PRIVATE).getString(PREF_ACCOUNT_NAME, null);
@@ -100,7 +107,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     } else if (action.equals(OPT_GET_SHEET)) {
       String spreadsheetId = args.getString(0);
       String spreadsheetRange = args.getString(1);
-      this.getSpreadsheet(spreadsheetId, spreadsheetRange);
+      this.fetchSpreadsheetData(spreadsheetId, spreadsheetRange);
       return true;
     } else if (action.equals(OPT_UPDATE_SHEET)) {
       String spreadsheetId = args.getString(0);
@@ -121,18 +128,25 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         .done(
             new DoneCallback() {
               public void onDone(Object result) {
-                buildSheetsClient();
+                mService =
+                    buildClient(
+                        AndroidHttp.newCompatibleTransport(), JacksonFactory.getDefaultInstance());
               }
             });
   }
 
-  private void buildSheetsClient() {
-    HttpTransport transport = AndroidHttp.newCompatibleTransport();
-    JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
-    mService =
-        new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, mCredential)
-            .setApplicationName(APP_NAME)
-            .build();
+  public Sheets buildClient(HttpTransport transport, JsonFactory jsonFactory) {
+    return new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, mCredential)
+        .setApplicationName(mApplicationName)
+        .build();
+  }
+
+  public String getApplicationName(Context context) {
+    ApplicationInfo appInfo = context.getApplicationInfo();
+    int stringId = appInfo.labelRes;
+    String appName =
+        stringId == 0 ? appInfo.nonLocalizedLabel.toString() : context.getString(stringId);
+    return appName;
   }
 
   private void signIn() {
@@ -170,7 +184,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     }
   }
 
-  private void getSpreadsheet(final String spreadsheetId, final String spreadsheetRange) {
+  public void fetchSpreadsheetData(final String spreadsheetId, final String spreadsheetRange) {
     if (spreadsheetId != null && spreadsheetId.length() > 0) {
       Callable callable =
           new Callable<String>() {
@@ -180,7 +194,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
               return response.toString();
             }
           };
-      buildRequest(callable)
+      executeOnBackground(callable)
           .then(
               new DoneCallback() {
                 public void onDone(Object result) {
@@ -208,7 +222,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     return this;
   }
 
-  private Promise buildRequest(Callable callable) {
+  private Promise executeOnBackground(Callable callable) {
     DeferredFutureTask task = new DeferredFutureTask(callable);
     Promise promise = task.promise();
 
@@ -223,10 +237,6 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
       cordova.getThreadPool().execute(task);
     }
     return promise;
-  }
-
-  private DeferredFutureTask buildDeferredTask(Callable callable) {
-    return new DeferredFutureTask(callable);
   }
 
   private boolean hasAccountPermissions() {
@@ -262,11 +272,15 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   }
 
   private void askForAccountPermission() {
+    String message =
+        String.format(getStringResource(MSG_REQUEST_ACCOUNT_PERMISSION), mApplicationName);
     EasyPermissions.requestPermissions(
-        mActivity,
-        "This app needs to access your Google account (via Contacts).",
-        REQUEST_PERMISSION_GET_ACCOUNTS,
-        Manifest.permission.GET_ACCOUNTS);
+        mActivity, message, REQUEST_PERMISSION_GET_ACCOUNTS, Manifest.permission.GET_ACCOUNTS);
+  }
+
+  private String getStringResource(String resourceName) {
+    return mActivity.getString(
+        mActivity.getResources().getIdentifier(resourceName, "string", mActivity.getPackageName()));
   }
 
   @Override
@@ -288,13 +302,9 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         break;
       case REQUEST_GOOGLE_PLAY_SERVICES:
         if (resultCode != Activity.RESULT_OK) {
-          Toast.makeText(
-                  mActivity.getApplicationContext(),
-                  "This app requires Google Play Services."
-                      + " Please install Google Play Services on your device and "
-                      + "relaunch this app.",
-                  Toast.LENGTH_SHORT)
-              .show();
+          String message =
+              String.format(getStringResource(MSG_REQUEST_GOOGLE_PLAY_SERVICES), mApplicationName);
+          Toast.makeText(mActivity.getApplicationContext(), message, Toast.LENGTH_SHORT).show();
         } else {
         }
         break;
@@ -425,7 +435,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
           }
         };
 
-    buildRequest(updateValuesCallable)
+    executeOnBackground(updateValuesCallable)
         .then(
             new DoneCallback<String>() {
               public void onDone(String result) {
