@@ -28,7 +28,13 @@ GoogleSheets.prototype.updateSpreadsheetCell = function(
                []);
 };
 
-GoogleSheets.install = function() {
+GoogleSheets.prototype.isUserSignedIn =
+    function(successCallback, errorCallback) {
+  cordova.exec(successCallback, errorCallback, "GoogleSheets",
+               "isUserSignedIn");
+}
+
+    GoogleSheets.install = function() {
   if (!cordova.plugins) {
     cordova.plugins = {};
   }
