@@ -119,7 +119,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     } else if (action.equals(OPT_UPDATE_CELL)) {
       return true;
     } else if (action.equals(OPT_IS_SIGNED_IN)) {
-      this.isUserSignedIn();
+      this.isUserSignedIn(callbackContext);
       return true;
     }
     return false;
@@ -468,11 +468,11 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     }
   }
 
-  public void isUserSignedIn() {
+  public void isUserSignedIn(CallbackContext callbacContext) {
     if (mAccountName != null && mAccountName.length() != 0) {
-      mCallbackContext.success(mAccountName);
+      callbackContext.success(mAccountName);
     } else {
-      mCallbackContext.error(null);
+      callbackContext.error("No user signed in");
     }
   }
 }
