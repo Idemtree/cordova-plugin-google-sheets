@@ -12,7 +12,6 @@
     <framework src="./rules.gradle" custom="true" type="gradleReference" />
     <framework src="com.android.support:appcompat-v7:25.0.1" />
     <framework src="com.google.android.gms:play-services-auth:10.2.6" />
-    <framework src="pub.devrel:easypermissions:0.3.0" />
     <framework src="org.jdeferred:jdeferred-android:1.2.6" />
 
     <config-file parent="/*" target="res/xml/config.xml">
