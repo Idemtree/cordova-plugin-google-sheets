@@ -54,6 +54,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   private static final String OPT_UPDATE_SHEET = "updateSpreadsheetValues";
   private static final String OPT_UPDATE_CELL = "updateCell";
   private static final String OPT_IS_SIGNED_IN = "isUserSignedIn";
+  private static final String OPT_GET_SPREADSHEET_DATA = "getSpreadsheetData";
   static final int REQUEST_ACCOUNT_PICKER = 1000;
   static final int REQUEST_AUTHORIZATION = 1001;
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
@@ -115,6 +116,11 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
       String spreadsheetRange = args.getString(1);
       String spreadsheetValues = args.getString(2);
       updateSpreadsheetValues(spreadsheetId, spreadsheetRange, spreadsheetValues);
+      return true;
+    } else if (action.equals(OPT_GET_SPREADSHEET_DATA)) {
+      String spreadsheetId = args.getString(0);
+      JSONArray spreadsheetRanges = args.getJSONArray(1);
+      this.getSpreadsheetData(spreadsheetId, spreadsheetRanges);
       return true;
     } else if (action.equals(OPT_UPDATE_CELL)) {
       return true;
@@ -222,6 +228,52 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     }
   }
 
+  public void getSpreadsheetData(final String spreadsheetId, final JSONArray spreadsheetRanges) {
+    if (spreadsheetId != null && spreadsheetId.length() > 0) {
+
+      Callable callable =
+          new Callable<String>() {
+            public String call() throws Exception {
+              ArrayList<String> rangesList = new ArrayList();
+
+              for (int i = 0; i < spreadsheetRanges.length(); i++) {
+                rangesList.add(spreadsheetRanges.getString(i));
+              }
+
+              BatchGetValuesResponse response =
+                  mService
+                      .spreadsheets()
+                      .values()
+                      .batchGet(spreadsheetId)
+                      .setRanges(rangesList)
+                      .execute();
+              return response.toString();
+            }
+          };
+      executeOnBackground(callable)
+          .then(
+              new DoneCallback() {
+                public void onDone(Object result) {
+                  mCallbackContext.success((String) result);
+                }
+              })
+          .fail(
+              new FailCallback<Exception>() {
+                public void onFail(Exception e) {
+                  mCallbackContext.error("an error man");
+                  if (e instanceof UserRecoverableAuthIOException) {
+                    cordova.startActivityForResult(
+                        getSelfReference(),
+                        ((UserRecoverableAuthIOException) e).getIntent(),
+                        REQUEST_AUTHORIZATION);
+                  }
+                }
+              });
+    } else {
+      mCallbackContext.error("Something went wrong when trying to get the data");
+    }
+  }
+
   private GoogleSheets getSelfReference() {
     return this;
   }
@@ -243,7 +295,8 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     return promise;
   }
 
-  private boolean hasAccountPermissions() {
+  /** Returns true if the user already granted permission to access their contacts. */
+  public boolean hasAccountPermissions() {
     return EasyPermissions.hasPermissions(mActivity, Manifest.permission.GET_ACCOUNTS);
   }
 
@@ -265,7 +318,6 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         // Start a dialog from which the user can choose an account
         cordova.startActivityForResult(
             this, mCredential.newChooseAccountIntent(), REQUEST_ACCOUNT_PICKER);
-        // getResultsFromApi();
       } else {
         mCredential.setSelectedAccountName(mAccountName);
       }
@@ -287,6 +339,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         mActivity.getResources().getIdentifier(resourceName, "string", mActivity.getPackageName()));
   }
 
+  /** Handles results from activities started from here. */
   @Override
   public void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
@@ -339,7 +392,10 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
    */
   @Override
   public void onPermissionsGranted(int requestCode, List<String> list) {
-    // Do nothing.
+    switch (requestCode) {
+      case REQUEST_PERMISSION_GET_ACCOUNTS:
+        chooseAccount();
+    }
   }
 
   /**
@@ -470,9 +526,9 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
 
   public void isUserSignedIn(CallbackContext callbacContext) {
     if (mAccountName != null && mAccountName.length() != 0) {
-      callbackContext.success(mAccountName);
+      mCallbackContext.success(mAccountName);
     } else {
-      callbackContext.error("No user signed in");
+      mCallbackContext.error("No user signed in");
     }
   }
 }
