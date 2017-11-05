@@ -53,6 +53,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   private static final String OPT_GET_SHEET = "getSpreadsheet";
   private static final String OPT_UPDATE_SHEET = "updateSpreadsheetValues";
   private static final String OPT_UPDATE_CELL = "updateCell";
+  private static final String OPT_IS_SIGNED_IN = "isUserSignedIn";
   static final int REQUEST_ACCOUNT_PICKER = 1000;
   static final int REQUEST_AUTHORIZATION = 1001;
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
@@ -85,7 +86,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
                 mActivity.getApplicationContext(), Arrays.asList(SCOPES))
             .setBackOff(new ExponentialBackOff());
 
-    if (mAccountName != null && mAccountName.length() != 0) {
+    if (this.isUserSignedIn()) {
       mCredential.setSelectedAccountName(mAccountName);
     }
 
@@ -116,6 +117,9 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
       updateSpreadsheetValues(spreadsheetId, spreadsheetRange, spreadsheetValues);
       return true;
     } else if (action.equals(OPT_UPDATE_CELL)) {
+      return true;
+    } else if (action.equals(OPT_IS_SIGNED_IN)) {
+      this.isUserSignedIn(callbackContext);
       return true;
     }
     return false;
@@ -454,5 +458,21 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
                 }
               }
             });
+  }
+
+  public boolean isUserSignedIn() {
+    if (mAccountName != null && mAccountName.length() != 0) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  public void isUserSignedIn(CallbackContext callbacContext) {
+    if (mAccountName != null && mAccountName.length() != 0) {
+      callbackContext.success(mAccountName);
+    } else {
+      callbackContext.error("No user signed in");
+    }
   }
 }
