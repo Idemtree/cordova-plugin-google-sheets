@@ -1,7 +1,7 @@
 var GoogleSheets = function() {};
 
 GoogleSheets.prototype.signIn = function(successCallback, errorCallback) {
-  cordova.exec(successCallback, errorCallback, "GoogleSheets", "signIn", []);
+  cordova.exec(successCallback, errorCallback, 'GoogleSheets', 'signIn', []);
 };
 
 GoogleSheets.prototype.signOut = function() {
@@ -9,32 +9,78 @@ GoogleSheets.prototype.signOut = function() {
 };
 
 GoogleSheets.prototype.getSpreadsheet = function(
-    spreadsheetId, spreadsheetRange, successCallback, errorCallback) {
-  cordova.exec(successCallback, errorCallback, "GoogleSheets", "getSpreadsheet",
-               [ spreadsheetId, spreadsheetRange ]);
+  spreadsheetId,
+  spreadsheetRange,
+  successCallback,
+  errorCallback
+) {
+  cordova.exec(
+    successCallback,
+    errorCallback,
+    'GoogleSheets',
+    'getSpreadsheet',
+    [spreadsheetId, spreadsheetRange]
+  );
+};
+
+GoogleSheets.prototype.getSpreadsheetData = function(
+  spreadsheetId,
+  spreadsheetRanges,
+  successCallback,
+  errorCallback
+) {
+  cordova.exec(
+    successCallback,
+    errorCallback,
+    'GoogleSheets',
+    'getSpreadsheetData',
+    [spreadsheetId, spreadsheetRanges]
+  );
 };
 
 GoogleSheets.prototype.updateSpreadsheetValues = function(
-    spreadsheetId, spreadsheetRange, valuesToUpdate, successCallback,
-    errorCallback) {
-  cordova.exec(successCallback, errorCallback, "GoogleSheets",
-               "updateSpreadsheetValues",
-               [ spreadsheetId, spreadsheetRange, valuesToUpdate ]);
+  spreadsheetId,
+  spreadsheetRange,
+  valuesToUpdate,
+  successCallback,
+  errorCallback
+) {
+  cordova.exec(
+    successCallback,
+    errorCallback,
+    'GoogleSheets',
+    'updateSpreadsheetValues',
+    [spreadsheetId, spreadsheetRange, valuesToUpdate]
+  );
 };
 
 GoogleSheets.prototype.updateSpreadsheetCell = function(
-    spreadsheetId, successCallback, errorCallback) {
-  cordova.exec(successCallback, errorCallback, "GoogleSheets", "updateCell",
-               []);
+  spreadsheetId,
+  successCallback,
+  errorCallback
+) {
+  cordova.exec(
+    successCallback,
+    errorCallback,
+    'GoogleSheets',
+    'updateCell',
+    []
+  );
 };
 
-GoogleSheets.prototype.isUserSignedIn =
-    function(successCallback, errorCallback) {
-  cordova.exec(successCallback, errorCallback, "GoogleSheets",
-               "isUserSignedIn");
-}
+GoogleSheets.prototype.isUserSignedIn = function(
+  successCallback,
+  errorCallback
+) {
+  cordova.exec(
+    successCallback,
+    errorCallback,
+    'GoogleSheets',
+    'isUserSignedIn'
+  );
+};
 
-    GoogleSheets.install = function() {
+GoogleSheets.install = function() {
   if (!cordova.plugins) {
     cordova.plugins = {};
   }
@@ -42,6 +88,8 @@ GoogleSheets.prototype.isUserSignedIn =
   return cordova.plugins.googlesheets;
 };
 
-module.exports = (function() { return new GoogleSheets(); })();
+module.exports = (function() {
+  return new GoogleSheets();
+})();
 
 cordova.addConstructor(GoogleSheets.install);
