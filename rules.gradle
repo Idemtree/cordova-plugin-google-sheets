@@ -6,3 +6,12 @@ dependencies {
         exclude group: 'org.apache.httpcomponents'
     }
 }
+
+ext.postBuildExtras = {
+    android {
+        compileOptions {
+            sourceCompatibility JavaVersion.VERSION_1_7
+            targetCompatibility JavaVersion.VERSION_1_7
+        }
+    }
+}
