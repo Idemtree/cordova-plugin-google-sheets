@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kvaldivia/cordova-plugin-google-sheets.git"
+    "url": "git+https://github.com/sumaqideas/cordova-plugin-google-sheets.git"
   },
   "keywords": [
     "ecosystem:cordova",
@@ -19,7 +19,7 @@
   "author": "Kenny Valdivia",
   "license": "GPLv2",
   "bugs": {
-    "url": "https://github.com/kvaldivia/cordova-plugin-google-sheets/issues"
+    "url": "https://github.com/sumaqideas/cordova-plugin-google-sheets/issues"
   },
-  "homepage": "https://github.com/kvaldivia/cordova-plugin-google-sheets#readme"
+  "homepage": "https://github.com/sumaqIdeas/cordova-plugin-google-sheets#readme"
 }
