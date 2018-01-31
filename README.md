@@ -4,18 +4,27 @@
 This plugin has not been extensively tested, use it at your own risk.
 
 ## Supported platforms
-This plugin, at it's current state, brings support only for the android platform, iOS might be supported in the near future.
+This plugin, at it's current state, brings support only for the android platform.
 
 ## Installation instructions
 Change directory to the root of your cordova project and run:
 ```bash
 cordova plugin add https://github.com/kvaldivia/cordova-plugin-google-sheets.git#master
 ```
+Or if you are using [Ionic Framework®](https://ionicframework.com).
+```bash
+ionic cordova plugin add https://github.com/kvaldivia/cordova-plugin-google-sheets.git#master
+
+```
 
 ## Usage
-Unline most other plugins, ther is no Typescript wrapper for this one, at least
-not yet. Anyway, the plugin can be still accessed using the javascript fashion:
+If you are writing your app with [Ionic Framework®](https://ionicframework.com). There is a typescript wrapper available at 
+[NPM](https://www.npmjs.com/package/@sumaq-plugins/google-sheets). Just change directory into your project's root and type.
+```bash
+npm install @sumaq-plugins/google-sheets --save
+```
 
+If you want to stick with javascript, you can access the plugin using cordova's require:
 ```javascript
 cordova.require('cordova-plugin-google-sheets.GoogleSheets');
 ```

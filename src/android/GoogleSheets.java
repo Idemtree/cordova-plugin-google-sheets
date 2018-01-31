@@ -1,4 +1,4 @@
-package org.sumaq.plugins;
+package org.sumaq.plugins.googlesheets;
 
 import android.Manifest;
 import android.accounts.AccountManager;
@@ -22,22 +22,16 @@ import com.google.api.client.util.ExponentialBackOff;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.*;
-import java.util.ArrayList;
+import java.lang.Runnable;
 import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.LinkedList;
+import java.util.Queue;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
-import org.jdeferred.DeferredFutureTask;
-import org.jdeferred.DoneCallback;
-import org.jdeferred.FailCallback;
-import org.jdeferred.Promise;
-import org.jdeferred.android.AndroidDeferredObject;
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
 
 public class GoogleSheets extends CordovaPlugin {
   private static final String TAG = "GOOGLE-SHEETS PLUGIN";
@@ -45,11 +39,24 @@ public class GoogleSheets extends CordovaPlugin {
   private static final String MSG_REQUEST_ACCOUNT_PERMISSION = "account_permission_request";
   private static final String OPT_SIGN_IN = "signIn";
   private static final String OPT_SIGN_OUT = "signOut";
-  private static final String OPT_GET_SHEET = "getSpreadsheet";
-  private static final String OPT_UPDATE_SHEET = "updateSpreadsheetValues";
-  private static final String OPT_UPDATE_CELL = "updateCell";
   private static final String OPT_IS_SIGNED_IN = "isUserSignedIn";
-  private static final String OPT_GET_SPREADSHEET_DATA = "getSpreadsheetData";
+  private static final String OPT_SPREADSHEETS_BATCH_UPDATE = "batchUpdate";
+  private static final String OPT_SPREADSHEETS_CREATE = "spreadsheetsCreate";
+  private static final String OPT_SPREADSHEETS_GET = "spreadsheetsGet";
+  private static final String OPT_SPREADSHEETS_GET_DATA_FILTER = "spreadsheetsGetByDataFilter";
+  private static final String OPT_SHEETS_COPY_TO = "sheetsCopyTo";
+  private static final String OPT_DEVELOPER_METADATA_GET = "developerMetadataGet";
+  private static final String OPT_DEVELOPER_METADATA_SEARCH = "developerMetadataSearch";
+  private static final String OPT_VALUES_APPEND = "valuesAppend";
+  private static final String OPT_VALUES_BATCH_GET = "valuesBatchGet";
+  private static final String OPT_VALUES_BATCH_CLEAR = "valuesBatchClear";
+  private static final String OPT_VALUES_BATCH_CLEAR_DATA_FILTER = "valuesBatchClearByDataFilter";
+  private static final String OPT_VALUES_BATCH_GET_DATA_FILTER = "valuesBatchGetByDataFilter";
+  private static final String OPT_VALUES_BATCH_UPDATE = "valuesBatchUpdate";
+  private static final String OPT_VALUES_BATCH_UPDATE_DATA_FILTER = "valuesBatchUpdateByDataFilter";
+  private static final String OPT_VALUES_CLEAR = "valuesClear";
+  private static final String OPT_VALUES_GET = "valuesGet";
+  private static final String OPT_VALUES_UPDATE = "valuesUpdate";
   static final int REQUEST_ACCOUNT_PICKER = 1000;
   static final int REQUEST_AUTHORIZATION = 1001;
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
@@ -60,16 +67,17 @@ public class GoogleSheets extends CordovaPlugin {
   private String mAccountName;
   private GoogleAccountCredential mCredential;
   private Activity mActivity;
-  private AndroidDeferredObject mDeferredSignIn;
-  private AndroidDeferredObject mDeferredBuildClient;
   private CallbackContext mCallbackContext;
   private com.google.api.services.sheets.v4.Sheets mService = null;
+  private SheetsOperations mSheetsOperations;
+  private ValuesOperations mValuesOperations;
+  private SpreadsheetsOperations mSpreadsheetsOperations;
+  private Queue<Runnable> mPausedTasks;
 
   @Override
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
     super.initialize(cordova, webView);
     mActivity = cordova.getActivity();
-    mDeferredBuildClient = new AndroidDeferredObject();
     mApplicationName =
         mApplicationName == null
             ? getApplicationName(mActivity.getApplicationContext())
@@ -82,9 +90,21 @@ public class GoogleSheets extends CordovaPlugin {
                 mActivity.getApplicationContext(), Arrays.asList(SCOPES))
             .setBackOff(new ExponentialBackOff());
 
+    mPausedTasks = new LinkedList<>();
+
     if (mAccountName != null && mAccountName != "") {
       mCredential.setSelectedAccountName(mAccountName);
-      this.buildClient();
+      mService = this.buildClient();
+    }
+
+    if (mSheetsOperations == null) {
+      mSheetsOperations = SheetsOperations.getInstance(this);
+    }
+    if (mValuesOperations == null) {
+      mValuesOperations = ValuesOperations.getInstance(this);
+    }
+    if (mSpreadsheetsOperations == null) {
+      mSpreadsheetsOperations = SpreadsheetsOperations.getInstance(this);
     }
 
     Log.d(TAG, "@initialize()");
@@ -93,38 +113,91 @@ public class GoogleSheets extends CordovaPlugin {
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext)
       throws JSONException {
-    Log.d(TAG, "@execute()");
     mCallbackContext = callbackContext;
-    if (action.equals(OPT_SIGN_IN)) {
-      this.signIn();
-      return true;
-    } else if (action.equals(OPT_SIGN_OUT)) {
-      String message = args.getString(0);
-      this.signOut(message, callbackContext);
-      return true;
-    } else if (action.equals(OPT_GET_SHEET)) {
-      String spreadsheetId = args.getString(0);
-      String spreadsheetRange = args.getString(1);
-      this.fetchSpreadsheetData(spreadsheetId, spreadsheetRange);
-      return true;
-    } else if (action.equals(OPT_UPDATE_SHEET)) {
-      String spreadsheetId = args.getString(0);
-      String spreadsheetRange = args.getString(1);
-      String spreadsheetValues = args.getString(2);
-      updateSpreadsheetValues(spreadsheetId, spreadsheetRange, spreadsheetValues);
-      return true;
-    } else if (action.equals(OPT_GET_SPREADSHEET_DATA)) {
-      String spreadsheetId = args.getString(0);
-      JSONArray spreadsheetRanges = args.getJSONArray(1);
-      this.getSpreadsheetData(spreadsheetId, spreadsheetRanges);
-      return true;
-    } else if (action.equals(OPT_UPDATE_CELL)) {
-      return true;
-    } else if (action.equals(OPT_IS_SIGNED_IN)) {
-      this.isUserSignedIn(callbackContext);
-      return true;
+    Runnable runnable = null;
+    boolean result = false;
+
+    switch (action) {
+      case OPT_SIGN_IN:
+        this.signIn();
+        result = true;
+        break;
+      case OPT_SIGN_OUT:
+        result = true;
+        break;
+      case OPT_IS_SIGNED_IN:
+        this.isUserSignedIn();
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_BATCH_UPDATE:
+        runnable = mSpreadsheetsOperations.batchUpdate(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_CREATE:
+	runnable = mSpreadsheetsOperations.create(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_GET:
+        runnable = mSpreadsheetsOperations.get(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_GET_DATA_FILTER:
+        runnable = mSpreadsheetsOperations.getByDataFilter(args);
+        result = true;
+        break;
+      case OPT_SHEETS_COPY_TO:
+        result = true;
+        runnable = mSheetsOperations.copyTo(args);
+        break;
+      case OPT_DEVELOPER_METADATA_GET:
+        result = true;
+        break;
+      case OPT_DEVELOPER_METADATA_SEARCH:
+        result = true;
+        break;
+      case OPT_VALUES_APPEND:
+        result = true;
+        runnable = mValuesOperations.append(args);
+        break;
+      case OPT_VALUES_BATCH_GET:
+        result = true;
+        runnable = mValuesOperations.batchGet(args);
+        break;
+      case OPT_VALUES_BATCH_CLEAR:
+        result = true;
+        runnable = mValuesOperations.batchClear(args);
+        break;
+      case OPT_VALUES_BATCH_CLEAR_DATA_FILTER:
+        result = true;
+        runnable = mValuesOperations.batchClearByDataFilter(args);
+        break;
+      case OPT_VALUES_BATCH_GET_DATA_FILTER:
+        result = true;
+        break;
+      case OPT_VALUES_BATCH_UPDATE:
+        result = true;
+        runnable = mValuesOperations.batchUpdate(args);
+        break;
+      case OPT_VALUES_BATCH_UPDATE_DATA_FILTER:
+        result = true;
+        break;
+      case OPT_VALUES_CLEAR:
+        result = true;
+        runnable = mValuesOperations.clear(args);
+        break;
+      case OPT_VALUES_GET:
+        result = true;
+        runnable = mValuesOperations.get(args);
+        break;
+      case OPT_VALUES_UPDATE:
+        result = true;
+        runnable = mValuesOperations.update(args);
+        break;
     }
-    return false;
+    if (runnable != null) {
+      executeOnBackground(runnable);
+    }
+    return result;
   }
 
   public Sheets buildClient() {
@@ -166,105 +239,19 @@ public class GoogleSheets extends CordovaPlugin {
     }
   }
 
-  public void fetchSpreadsheetData(final String spreadsheetId, final String spreadsheetRange) {
-    if (spreadsheetId != null && spreadsheetId.length() > 0) {
-      Callable callable =
-          new Callable<String>() {
-            public String call() throws Exception {
-              ValueRange response =
-                  mService.spreadsheets().values().get(spreadsheetId, spreadsheetRange).execute();
-              return response.toString();
-            }
-          };
-      executeOnBackground(callable)
-          .then(
-              new DoneCallback() {
-                public void onDone(Object result) {
-                  mCallbackContext.success((String) result);
-                }
-              })
-          .fail(
-              new FailCallback<Exception>() {
-                public void onFail(Exception e) {
-                  mCallbackContext.error("an error man");
-                  if (e instanceof UserRecoverableAuthIOException) {
-                    cordova.startActivityForResult(
-                        getSelfReference(),
-                        ((UserRecoverableAuthIOException) e).getIntent(),
-                        REQUEST_AUTHORIZATION);
-                  }
-                }
-              });
-    } else {
-      mCallbackContext.error("Expected one non-empty string argument.");
-    }
-  }
-
-  public void getSpreadsheetData(final String spreadsheetId, final JSONArray spreadsheetRanges) {
-    if (spreadsheetId != null && spreadsheetId.length() > 0) {
-
-      Callable callable =
-          new Callable<String>() {
-            public String call() throws Exception {
-              ArrayList<String> rangesList = new ArrayList();
-
-              for (int i = 0; i < spreadsheetRanges.length(); i++) {
-                rangesList.add(spreadsheetRanges.getString(i));
-              }
-
-              BatchGetValuesResponse response =
-                  mService
-                      .spreadsheets()
-                      .values()
-                      .batchGet(spreadsheetId)
-                      .setRanges(rangesList)
-                      .execute();
-              return response.toString();
-            }
-          };
-      executeOnBackground(callable)
-          .then(
-              new DoneCallback() {
-                public void onDone(Object result) {
-                  mCallbackContext.success((String) result);
-                }
-              })
-          .fail(
-              new FailCallback<Exception>() {
-                public void onFail(Exception e) {
-                  mCallbackContext.error("an error man");
-                  if (e instanceof UserRecoverableAuthIOException) {
-                    cordova.startActivityForResult(
-                        getSelfReference(),
-                        ((UserRecoverableAuthIOException) e).getIntent(),
-                        REQUEST_AUTHORIZATION);
-                  }
-                }
-              });
-    } else {
-      mCallbackContext.error("Something went wrong when trying to get the data");
-    }
-  }
-
   private GoogleSheets getSelfReference() {
     return this;
   }
 
-  private Promise executeOnBackground(Callable callable) {
-    DeferredFutureTask task = new DeferredFutureTask(callable);
-    Promise promise = task.promise();
-
+  private void executeOnBackground(Runnable task) {
     if (!isGooglePlayServicesAvailable()) {
       acquireGooglePlayServices();
-      task.cancel(true);
+      cordova.getThreadPool().execute(task);
     } else if (!isDeviceOnline()) {
-      task.cancel(true);
     } else if (mCredential.getSelectedAccountName() == null) {
-      task.cancel(true);
     } else {
       cordova.getThreadPool().execute(task);
     }
-    return promise;
   }
 
   /** Returns true if the user already granted permission to access their contacts. */
@@ -333,6 +320,15 @@ public class GoogleSheets extends CordovaPlugin {
         } else {
         }
         break;
+      case REQUEST_AUTHORIZATION:
+        if (resultCode == Activity.RESULT_OK) {
+          if (!mPausedTasks.isEmpty()) {
+            executeOnBackground(mPausedTasks.remove());
+          }
+        } else {
+          mPausedTasks = new LinkedList<>();
+        }
+        break;
     }
   }
 
@@ -396,76 +392,30 @@ public class GoogleSheets extends CordovaPlugin {
     dialog.show();
   }
 
-  private void updateSpreadsheetValues(
-      final String spreadsheetId, final String spreadsheetRange, final String valuesJsonLiteral) {
-    Callable updateValuesCallable =
-        new Callable<String>() {
-          public String call() throws Exception {
-            Sheets.Spreadsheets.Values.Update request;
-            ValueRange requestBody = new ValueRange();
-            JSONObject requestBodyJsonObject;
-            JSONObject valuesJsonObject;
-
-            valuesJsonObject = new JSONObject(valuesJsonLiteral);
-            JSONArray valuesArray = valuesJsonObject.optJSONArray("values");
-            List<List<Object>> requestValues = new ArrayList();
-
-            for (int rowIndex = 0; rowIndex < valuesArray.length(); rowIndex++) {
-              List<Object> row = new ArrayList();
-              JSONArray rowArray = valuesArray.optJSONArray(rowIndex);
-              for (int columnIndex = 0; columnIndex < rowArray.length(); columnIndex++) {
-                row.add(columnIndex, rowArray.get(columnIndex));
-              }
-              requestValues.add(rowIndex, row);
-            }
-
-            requestBody.setValues(requestValues);
-
-            request =
-                mService
-                    .spreadsheets()
-                    .values()
-                    .update(spreadsheetId, spreadsheetRange, requestBody)
-                    .setValueInputOption("USER_ENTERED");
-            UpdateValuesResponse response = request.execute();
-            return response.toString();
-          }
-        };
-
-    executeOnBackground(updateValuesCallable)
-        .then(
-            new DoneCallback<String>() {
-              public void onDone(String result) {
-                mCallbackContext.success(result);
-              }
-            })
-        .fail(
-            new FailCallback<Exception>() {
-              public void onFail(Exception e) {
-                mCallbackContext.error("Could not perform update");
-                if (e instanceof UserRecoverableAuthIOException) {
-                  cordova.startActivityForResult(
-                      getSelfReference(),
-                      ((UserRecoverableAuthIOException) e).getIntent(),
-                      REQUEST_AUTHORIZATION);
-                }
-              }
-            });
-  }
-
-  public boolean isUserSignedIn() {
+  public void isUserSignedIn() {
     if (mAccountName != null && mAccountName.length() != 0) {
-      return true;
+      mCallbackContext.success(mAccountName);
     } else {
-      return false;
+      mCallbackContext.error("No user signed in");
     }
   }
 
-  public void isUserSignedIn(CallbackContext callbackContext) {
-    if (mAccountName != null && mAccountName.length() != 0) {
-      callbackContext.success(mAccountName);
-    } else {
-      callbackContext.error("No user signed in");
+  public Sheets getService() {
+    if (mService == null) {
+      mService = this.buildClient();
+    }
+    return mService;
+  }
+
+  public CallbackContext getCallbackContext() {
+    return mCallbackContext;
+  }
+
+  public void requestAuthorization(UserRecoverableAuthIOException except, Runnable task) {
+    if (except instanceof UserRecoverableAuthIOException) {
+      mPausedTasks.add(task);
+      cordova.startActivityForResult(
+          getSelfReference(), (except).getIntent(), REQUEST_AUTHORIZATION);
     }
   }
 }
