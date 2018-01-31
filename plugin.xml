@@ -12,12 +12,10 @@
     <framework src="./rules.gradle" custom="true" type="gradleReference" />
     <framework src="com.android.support:appcompat-v7:25.0.1" />
     <framework src="com.google.android.gms:play-services-auth:10.2.6" />
-    <framework src="pub.devrel:easypermissions:0.3.0" />
-    <framework src="org.jdeferred:jdeferred-android:1.2.6" />
 
     <config-file parent="/*" target="res/xml/config.xml">
       <feature name="GoogleSheets">
-        <param name="android-package" value="org.sumaq.plugins.GoogleSheets" />
+        <param name="android-package" value="org.sumaq.plugins.googlesheets.GoogleSheets" />
       </feature>
       <access origin="https://accounts.google.com/*" />
       <access origin="https://sheets.googleapis.com/*" />
@@ -28,7 +26,10 @@
       <uses-permission android:name="android.permission.GET_ACCOUNTS" />
       <uses-permission android:name="android.permission.USE_CREDENTIALS" />
     </config-file>
-    <source-file src="src/android/GoogleSheets.java" target-dir="src/org/sumaq/plugins" />
+    <source-file src="src/android/GoogleSheets.java" target-dir="src/org/sumaq/plugins/googlesheets" />
+    <source-file src="src/android/SheetsOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
+    <source-file src="src/android/ValuesOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
+    <source-file src="src/android/SpreadsheetsOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
     <config-file parent="/*" target="res/values/strings.xml">
       <string name="google_play_services_request">%1$s requires Google Play Services. Please Install Google Play Services on your device and relaunch the app.
       </string>

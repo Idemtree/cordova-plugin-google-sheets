@@ -1,4 +1,4 @@
-package org.sumaq.plugins;
+package org.sumaq.plugins.googlesheets;
 
 import android.Manifest;
 import android.accounts.AccountManager;
@@ -10,7 +10,6 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
-import android.support.annotation.NonNull;
 import android.util.Log;
 import android.widget.Toast;
 import com.google.android.gms.common.ConnectionResult;
@@ -18,41 +17,46 @@ import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.api.client.extensions.android.http.AndroidHttp;
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential;
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException;
-import com.google.api.client.http.HttpTransport;
-import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.ExponentialBackOff;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.*;
-import java.util.ArrayList;
+import java.lang.Runnable;
 import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.LinkedList;
+import java.util.Queue;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
-import org.jdeferred.DeferredFutureTask;
-import org.jdeferred.DoneCallback;
-import org.jdeferred.FailCallback;
-import org.jdeferred.Promise;
-import org.jdeferred.android.AndroidDeferredObject;
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
-import pub.devrel.easypermissions.AfterPermissionGranted;
-import pub.devrel.easypermissions.EasyPermissions;
 
-public class GoogleSheets extends CordovaPlugin implements EasyPermissions.PermissionCallbacks {
+public class GoogleSheets extends CordovaPlugin {
   private static final String TAG = "GOOGLE-SHEETS PLUGIN";
   private static final String MSG_REQUEST_GOOGLE_PLAY_SERVICES = "google_play_services_request";
   private static final String MSG_REQUEST_ACCOUNT_PERMISSION = "account_permission_request";
   private static final String OPT_SIGN_IN = "signIn";
   private static final String OPT_SIGN_OUT = "signOut";
-  private static final String OPT_GET_SHEET = "getSpreadsheet";
-  private static final String OPT_UPDATE_SHEET = "updateSpreadsheetValues";
-  private static final String OPT_UPDATE_CELL = "updateCell";
+  private static final String OPT_IS_SIGNED_IN = "isUserSignedIn";
+  private static final String OPT_SPREADSHEETS_BATCH_UPDATE = "batchUpdate";
+  private static final String OPT_SPREADSHEETS_CREATE = "spreadsheetsCreate";
+  private static final String OPT_SPREADSHEETS_GET = "spreadsheetsGet";
+  private static final String OPT_SPREADSHEETS_GET_DATA_FILTER = "spreadsheetsGetByDataFilter";
+  private static final String OPT_SHEETS_COPY_TO = "sheetsCopyTo";
+  private static final String OPT_DEVELOPER_METADATA_GET = "developerMetadataGet";
+  private static final String OPT_DEVELOPER_METADATA_SEARCH = "developerMetadataSearch";
+  private static final String OPT_VALUES_APPEND = "valuesAppend";
+  private static final String OPT_VALUES_BATCH_GET = "valuesBatchGet";
+  private static final String OPT_VALUES_BATCH_CLEAR = "valuesBatchClear";
+  private static final String OPT_VALUES_BATCH_CLEAR_DATA_FILTER = "valuesBatchClearByDataFilter";
+  private static final String OPT_VALUES_BATCH_GET_DATA_FILTER = "valuesBatchGetByDataFilter";
+  private static final String OPT_VALUES_BATCH_UPDATE = "valuesBatchUpdate";
+  private static final String OPT_VALUES_BATCH_UPDATE_DATA_FILTER = "valuesBatchUpdateByDataFilter";
+  private static final String OPT_VALUES_CLEAR = "valuesClear";
+  private static final String OPT_VALUES_GET = "valuesGet";
+  private static final String OPT_VALUES_UPDATE = "valuesUpdate";
   static final int REQUEST_ACCOUNT_PICKER = 1000;
   static final int REQUEST_AUTHORIZATION = 1001;
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
@@ -63,16 +67,17 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   private String mAccountName;
   private GoogleAccountCredential mCredential;
   private Activity mActivity;
-  private AndroidDeferredObject mDeferredSignIn;
-  private AndroidDeferredObject mDeferredBuildClient;
   private CallbackContext mCallbackContext;
   private com.google.api.services.sheets.v4.Sheets mService = null;
+  private SheetsOperations mSheetsOperations;
+  private ValuesOperations mValuesOperations;
+  private SpreadsheetsOperations mSpreadsheetsOperations;
+  private Queue<Runnable> mPausedTasks;
 
   @Override
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
     super.initialize(cordova, webView);
     mActivity = cordova.getActivity();
-    mDeferredBuildClient = new AndroidDeferredObject();
     mApplicationName =
         mApplicationName == null
             ? getApplicationName(mActivity.getApplicationContext())
@@ -85,8 +90,21 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
                 mActivity.getApplicationContext(), Arrays.asList(SCOPES))
             .setBackOff(new ExponentialBackOff());
 
-    if (mAccountName != null && mAccountName.length() != 0) {
+    mPausedTasks = new LinkedList<>();
+
+    if (mAccountName != null && mAccountName != "") {
       mCredential.setSelectedAccountName(mAccountName);
+      mService = this.buildClient();
+    }
+
+    if (mSheetsOperations == null) {
+      mSheetsOperations = SheetsOperations.getInstance(this);
+    }
+    if (mValuesOperations == null) {
+      mValuesOperations = ValuesOperations.getInstance(this);
+    }
+    if (mSpreadsheetsOperations == null) {
+      mSpreadsheetsOperations = SpreadsheetsOperations.getInstance(this);
     }
 
     Log.d(TAG, "@initialize()");
@@ -95,48 +113,96 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext)
       throws JSONException {
-    Log.d(TAG, "@execute()");
     mCallbackContext = callbackContext;
-    if (action.equals(OPT_SIGN_IN)) {
-      this.signIn();
-      return true;
-    } else if (action.equals(OPT_SIGN_OUT)) {
-      String message = args.getString(0);
-      this.signOut(message, callbackContext);
-      return true;
-    } else if (action.equals(OPT_GET_SHEET)) {
-      String spreadsheetId = args.getString(0);
-      String spreadsheetRange = args.getString(1);
-      this.fetchSpreadsheetData(spreadsheetId, spreadsheetRange);
-      return true;
-    } else if (action.equals(OPT_UPDATE_SHEET)) {
-      String spreadsheetId = args.getString(0);
-      String spreadsheetRange = args.getString(1);
-      String spreadsheetValues = args.getString(2);
-      updateSpreadsheetValues(spreadsheetId, spreadsheetRange, spreadsheetValues);
-      return true;
-    } else if (action.equals(OPT_UPDATE_CELL)) {
-      return true;
+    Runnable runnable = null;
+    boolean result = false;
+
+    switch (action) {
+      case OPT_SIGN_IN:
+        this.signIn();
+        result = true;
+        break;
+      case OPT_SIGN_OUT:
+        result = true;
+        break;
+      case OPT_IS_SIGNED_IN:
+        this.isUserSignedIn();
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_BATCH_UPDATE:
+        runnable = mSpreadsheetsOperations.batchUpdate(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_CREATE:
+	runnable = mSpreadsheetsOperations.create(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_GET:
+        runnable = mSpreadsheetsOperations.get(args);
+        result = true;
+        break;
+      case OPT_SPREADSHEETS_GET_DATA_FILTER:
+        runnable = mSpreadsheetsOperations.getByDataFilter(args);
+        result = true;
+        break;
+      case OPT_SHEETS_COPY_TO:
+        result = true;
+        runnable = mSheetsOperations.copyTo(args);
+        break;
+      case OPT_DEVELOPER_METADATA_GET:
+        result = true;
+        break;
+      case OPT_DEVELOPER_METADATA_SEARCH:
+        result = true;
+        break;
+      case OPT_VALUES_APPEND:
+        result = true;
+        runnable = mValuesOperations.append(args);
+        break;
+      case OPT_VALUES_BATCH_GET:
+        result = true;
+        runnable = mValuesOperations.batchGet(args);
+        break;
+      case OPT_VALUES_BATCH_CLEAR:
+        result = true;
+        runnable = mValuesOperations.batchClear(args);
+        break;
+      case OPT_VALUES_BATCH_CLEAR_DATA_FILTER:
+        result = true;
+        runnable = mValuesOperations.batchClearByDataFilter(args);
+        break;
+      case OPT_VALUES_BATCH_GET_DATA_FILTER:
+        result = true;
+        break;
+      case OPT_VALUES_BATCH_UPDATE:
+        result = true;
+        runnable = mValuesOperations.batchUpdate(args);
+        break;
+      case OPT_VALUES_BATCH_UPDATE_DATA_FILTER:
+        result = true;
+        break;
+      case OPT_VALUES_CLEAR:
+        result = true;
+        runnable = mValuesOperations.clear(args);
+        break;
+      case OPT_VALUES_GET:
+        result = true;
+        runnable = mValuesOperations.get(args);
+        break;
+      case OPT_VALUES_UPDATE:
+        result = true;
+        runnable = mValuesOperations.update(args);
+        break;
     }
-    return false;
+    if (runnable != null) {
+      executeOnBackground(runnable);
+    }
+    return result;
   }
 
-  private Promise trySignIn() {
-    mDeferredSignIn = new AndroidDeferredObject();
-    return mDeferredSignIn
-        .promise()
-        .done(
-            new DoneCallback() {
-              public void onDone(Object result) {
-                mService =
-                    buildClient(
-                        AndroidHttp.newCompatibleTransport(), JacksonFactory.getDefaultInstance());
-              }
-            });
-  }
-
-  public Sheets buildClient(HttpTransport transport, JsonFactory jsonFactory) {
-    return new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, mCredential)
+  public Sheets buildClient() {
+    return new com.google.api.services.sheets.v4.Sheets.Builder(
+            AndroidHttp.newCompatibleTransport(), JacksonFactory.getDefaultInstance(), mCredential)
         .setApplicationName(mApplicationName)
         .build();
   }
@@ -151,23 +217,12 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
 
   private void signIn() {
     if (hasAccountPermissions()) {
-      trySignIn()
-          .then(
-              new DoneCallback() {
-                public void onDone(Object result) {
-                  mCallbackContext.success(mAccountName);
-                }
-              })
-          .fail(
-              new FailCallback() {
-                public void onFail(Object result) {
-                  mCallbackContext.error("Could not sign In");
-                }
-              });
       if (mAccountName == null) {
         chooseAccount();
-      } else {
-        mDeferredSignIn.resolve("");
+      } else if (mService == null) {
+        mCredential.setSelectedAccountName(mAccountName);
+        mService = buildClient();
+        mCallbackContext.success("signed in as " + mAccountName);
       }
     } else {
       askForAccountPermission();
@@ -184,74 +239,32 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     }
   }
 
-  public void fetchSpreadsheetData(final String spreadsheetId, final String spreadsheetRange) {
-    if (spreadsheetId != null && spreadsheetId.length() > 0) {
-      Callable callable =
-          new Callable<String>() {
-            public String call() throws Exception {
-              ValueRange response =
-                  mService.spreadsheets().values().get(spreadsheetId, spreadsheetRange).execute();
-              return response.toString();
-            }
-          };
-      executeOnBackground(callable)
-          .then(
-              new DoneCallback() {
-                public void onDone(Object result) {
-                  mCallbackContext.success((String) result);
-                }
-              })
-          .fail(
-              new FailCallback<Exception>() {
-                public void onFail(Exception e) {
-                  mCallbackContext.error("an error man");
-                  if (e instanceof UserRecoverableAuthIOException) {
-                    cordova.startActivityForResult(
-                        getSelfReference(),
-                        ((UserRecoverableAuthIOException) e).getIntent(),
-                        REQUEST_AUTHORIZATION);
-                  }
-                }
-              });
-    } else {
-      mCallbackContext.error("Expected one non-empty string argument.");
-    }
-  }
-
   private GoogleSheets getSelfReference() {
     return this;
   }
 
-  private Promise executeOnBackground(Callable callable) {
-    DeferredFutureTask task = new DeferredFutureTask(callable);
-    Promise promise = task.promise();
-
+  private void executeOnBackground(Runnable task) {
     if (!isGooglePlayServicesAvailable()) {
       acquireGooglePlayServices();
-      task.cancel(true);
+      cordova.getThreadPool().execute(task);
     } else if (!isDeviceOnline()) {
-      task.cancel(true);
     } else if (mCredential.getSelectedAccountName() == null) {
-      task.cancel(true);
     } else {
       cordova.getThreadPool().execute(task);
     }
-    return promise;
   }
 
-  private boolean hasAccountPermissions() {
-    return EasyPermissions.hasPermissions(mActivity, Manifest.permission.GET_ACCOUNTS);
+  /** Returns true if the user already granted permission to access their contacts. */
+  public boolean hasAccountPermissions() {
+    return cordova.hasPermission(Manifest.permission.GET_ACCOUNTS);
   }
 
   /**
    * Attempts to set the account used with the API credentials. If an account name was previously
    * saved it will use that one; otherwise an account picker dialog will be shown to the user. Note
    * that the setting the account to use with the credentials object requires the app to have the
-   * GET_ACCOUNTS permission, which is requested here if it is not already present. The
-   * AfterPermissionGranted annotation indicates that this function will be rerun automatically
-   * whenever the GET_ACCOUNTS permission is granted.
+   * GET_ACCOUNTS permission, which is requested here if it is not already present.
    */
-  @AfterPermissionGranted(REQUEST_PERMISSION_GET_ACCOUNTS)
   private void chooseAccount() {
 
     if (hasAccountPermissions()) {
@@ -261,7 +274,6 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         // Start a dialog from which the user can choose an account
         cordova.startActivityForResult(
             this, mCredential.newChooseAccountIntent(), REQUEST_ACCOUNT_PICKER);
-        // getResultsFromApi();
       } else {
         mCredential.setSelectedAccountName(mAccountName);
       }
@@ -272,10 +284,8 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
   }
 
   private void askForAccountPermission() {
-    String message =
-        String.format(getStringResource(MSG_REQUEST_ACCOUNT_PERMISSION), mApplicationName);
-    EasyPermissions.requestPermissions(
-        mActivity, message, REQUEST_PERMISSION_GET_ACCOUNTS, Manifest.permission.GET_ACCOUNTS);
+    cordova.requestPermission(
+        this, REQUEST_PERMISSION_GET_ACCOUNTS, Manifest.permission.GET_ACCOUNTS);
   }
 
   private String getStringResource(String resourceName) {
@@ -283,6 +293,7 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         mActivity.getResources().getIdentifier(resourceName, "string", mActivity.getPackageName()));
   }
 
+  /** Handles results from activities started from here. */
   @Override
   public void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
@@ -296,8 +307,9 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
             editor.putString(PREF_ACCOUNT_NAME, accountName);
             editor.apply();
             mCredential.setSelectedAccountName(accountName);
+            mService = buildClient();
+            mCallbackContext.success("signed in as" + accountName);
           }
-          mDeferredSignIn.resolve("");
         }
         break;
       case REQUEST_GOOGLE_PLAY_SERVICES:
@@ -308,45 +320,26 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
         } else {
         }
         break;
+      case REQUEST_AUTHORIZATION:
+        if (resultCode == Activity.RESULT_OK) {
+          if (!mPausedTasks.isEmpty()) {
+            executeOnBackground(mPausedTasks.remove());
+          }
+        } else {
+          mPausedTasks = new LinkedList<>();
+        }
+        break;
     }
   }
 
-  /**
-   * Respond to requests for permissions at runtime for API 23 and above.
-   *
-   * @param requestCode The request code passed in requestPermissions(android.app.Activity, String,
-   *     int, String[])
-   * @param permissions The requested permissions. Never null.
-   * @param grantResults The grant results for the corresponding permissions which is either
-   *     PERMISSION_GRANTED or PERMISSION_DENIED. Never null.
-   */
   @Override
-  public void onRequestPermissionsResult(
-      int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-    this.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults, this);
-  }
-
-  /**
-   * Callback for when a permission is granted using the EasyPermissions library.
-   *
-   * @param requestCode The request code associated with the requested permission
-   * @param list The requested permission list. Never null.
-   */
-  @Override
-  public void onPermissionsGranted(int requestCode, List<String> list) {
-    // Do nothing.
-  }
-
-  /**
-   * Callback for when a permission is denied using the EasyPermissions library.
-   *
-   * @param requestCode The request code associated with the requested permission
-   * @param list The requested permission list. Never null.
-   */
-  @Override
-  public void onPermissionsDenied(int requestCode, List<String> list) {
-    // Do nothing.
+  public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults)
+      throws JSONException {
+    switch (requestCode) {
+      case REQUEST_PERMISSION_GET_ACCOUNTS:
+        chooseAccount();
+        break;
+    }
   }
 
   /**
@@ -399,60 +392,30 @@ public class GoogleSheets extends CordovaPlugin implements EasyPermissions.Permi
     dialog.show();
   }
 
-  private void updateSpreadsheetValues(
-      final String spreadsheetId, final String spreadsheetRange, final String valuesJsonLiteral) {
-    Callable updateValuesCallable =
-        new Callable<String>() {
-          public String call() throws Exception {
-            Sheets.Spreadsheets.Values.Update request;
-            ValueRange requestBody = new ValueRange();
-            JSONObject requestBodyJsonObject;
-            JSONObject valuesJsonObject;
+  public void isUserSignedIn() {
+    if (mAccountName != null && mAccountName.length() != 0) {
+      mCallbackContext.success(mAccountName);
+    } else {
+      mCallbackContext.error("No user signed in");
+    }
+  }
 
-            valuesJsonObject = new JSONObject(valuesJsonLiteral);
-            JSONArray valuesArray = valuesJsonObject.optJSONArray("values");
-            List<List<Object>> requestValues = new ArrayList();
+  public Sheets getService() {
+    if (mService == null) {
+      mService = this.buildClient();
+    }
+    return mService;
+  }
 
-            for (int rowIndex = 0; rowIndex < valuesArray.length(); rowIndex++) {
-              List<Object> row = new ArrayList();
-              JSONArray rowArray = valuesArray.optJSONArray(rowIndex);
-              for (int columnIndex = 0; columnIndex < rowArray.length(); columnIndex++) {
-                row.add(columnIndex, rowArray.get(columnIndex));
-              }
-              requestValues.add(rowIndex, row);
-            }
+  public CallbackContext getCallbackContext() {
+    return mCallbackContext;
+  }
 
-            requestBody.setValues(requestValues);
-
-            request =
-                mService
-                    .spreadsheets()
-                    .values()
-                    .update(spreadsheetId, spreadsheetRange, requestBody)
-                    .setValueInputOption("USER_ENTERED");
-            UpdateValuesResponse response = request.execute();
-            return response.toString();
-          }
-        };
-
-    executeOnBackground(updateValuesCallable)
-        .then(
-            new DoneCallback<String>() {
-              public void onDone(String result) {
-                mCallbackContext.success(result);
-              }
-            })
-        .fail(
-            new FailCallback<Exception>() {
-              public void onFail(Exception e) {
-                mCallbackContext.error("Could not perform update");
-                if (e instanceof UserRecoverableAuthIOException) {
-                  cordova.startActivityForResult(
-                      getSelfReference(),
-                      ((UserRecoverableAuthIOException) e).getIntent(),
-                      REQUEST_AUTHORIZATION);
-                }
-              }
-            });
+  public void requestAuthorization(UserRecoverableAuthIOException except, Runnable task) {
+    if (except instanceof UserRecoverableAuthIOException) {
+      mPausedTasks.add(task);
+      cordova.startActivityForResult(
+          getSelfReference(), (except).getIntent(), REQUEST_AUTHORIZATION);
+    }
   }
 }
