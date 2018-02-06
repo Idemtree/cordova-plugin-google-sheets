@@ -18,7 +18,7 @@ import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class ValuesOperations {
+public class ValuesOperations extends Operations {
   private GoogleSheets mPlugin;
   private static ValuesOperations mInstance;
   public static String STR_DEFAULT_MAJOR_DIMENSION_OPT = "ROWS";
@@ -64,10 +64,10 @@ public class ValuesOperations {
           Sheets sheetsService = mPlugin.getService();
           Sheets.Spreadsheets.Values.Append request =
               sheetsService.spreadsheets().values().append(spreadsheetId, range, requestBody);
-          if (valueInputOption == null || valueInputOption == "null") {
+          if (!isCordovaNullable(valueInputOption)) {
             valueInputOption = ValuesOperations.DEFAULT_VALUE_INPUT_OPTION;
           }
-          if (insertDataOption == null || insertDataOption == "null") {
+          if (!isCordovaNullable(insertDataOption)) {
             insertDataOption = ValuesOperations.DEFAULT_INSERT_DATA_OPTION;
           }
           request.setValueInputOption(valueInputOption);
@@ -146,10 +146,10 @@ public class ValuesOperations {
           Sheets.Spreadsheets.Values.BatchGet request =
               sheetsService.spreadsheets().values().batchGet(spreadsheetId);
           request.setRanges(rangesList);
-          if (valueRenderOption != null) {
+          if (!isCordovaNullable(valueRenderOption)) {
             request.setValueRenderOption(valueRenderOption);
           }
-          if (dateTimeRenderOption != null) {
+          if (!isCordovaNullable(dateTimeRenderOption)) {
             request.setDateTimeRenderOption(dateTimeRenderOption);
           }
           BatchGetValuesResponse response = request.execute();
