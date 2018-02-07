@@ -7,7 +7,7 @@ import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecovera
 import java.lang.Runnable;
 import org.json.JSONArray;
 
-public class SheetsOperations {
+public class SheetsOperations extends Operations {
   private GoogleSheets mPlugin;
   private static SheetsOperations mInstance;
 

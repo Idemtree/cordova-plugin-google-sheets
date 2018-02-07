@@ -10,7 +10,7 @@ import java.lang.Runnable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SpreadsheetsOperations {
+public class SpreadsheetsOperations extends Operations {
   private GoogleSheets mPlugin;
   private static SpreadsheetsOperations mInstance;
 
@@ -48,19 +48,19 @@ public class SpreadsheetsOperations {
           SpreadsheetProperties properties = new SpreadsheetProperties();
           Sheets sheetsService = mPlugin.getService();
 
-          if (spreadsheetTitle != null && spreadsheetTitle != "null") {
+          if (!isCordovaNullable(spreadsheetTitle)) {
             properties.setTitle(spreadsheetTitle);
           }
 
-          if (spreadsheetLocale != null && spreadsheetLocale != "null") {
+          if (!isCordovaNullable(spreadsheetLocale)) {
             properties.setLocale(spreadsheetLocale);
           }
 
-          if (spreadsheetAutoRecalc != null && spreadsheetLocale != "null") {
+          if (!isCordovaNullable(spreadsheetAutoRecalc)) {
             properties.setAutoRecalc(spreadsheetAutoRecalc);
           }
           
-          if (spreadsheetTimeZone != null && spreadsheetTimeZone != "null") {
+          if (!isCordovaNullable(spreadsheetTimeZone)) {
             properties.setTimeZone(spreadsheetTimeZone);
           }
 
