@@ -1,6 +1,6 @@
 {
   "name": "cordova-plugin-google-sheets",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Just a plugin for native access to Google Sheets.",
   "cordova": {
     "id": "cordova-plugin-google-sheets",
