@@ -27,6 +27,7 @@
       <uses-permission android:name="android.permission.USE_CREDENTIALS" />
     </config-file>
     <source-file src="src/android/GoogleSheets.java" target-dir="src/org/sumaq/plugins/googlesheets" />
+    <source-file src="src/android/Operations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
     <source-file src="src/android/SheetsOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
     <source-file src="src/android/ValuesOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
     <source-file src="src/android/SpreadsheetsOperations.java" target-dir="src/org/sumaq/plugins/googlesheets" />
