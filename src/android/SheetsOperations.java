@@ -3,11 +3,10 @@ package org.sumaq.plugins.googlesheets;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.model.CopySheetToAnotherSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.SheetProperties;
-import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException;
-import java.lang.Runnable;
+import org.apache.cordova.CallbackContext;
 import org.json.JSONArray;
 
-public class SheetsOperations extends Operations {
+public class SheetsOperations extends OperationsProvider {
   private GoogleSheets mPlugin;
   private static SheetsOperations mInstance;
 
@@ -22,8 +21,9 @@ public class SheetsOperations extends Operations {
     return mInstance;
   }
 
-  public Runnable copyTo(final JSONArray params) {
-    return new Runnable() {
+  public Operation copyTo(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -38,11 +38,9 @@ public class SheetsOperations extends Operations {
               sheetsService.spreadsheets().sheets().copyTo(spreadsheetId, sheetId, requestBody);
 
           SheetProperties response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };

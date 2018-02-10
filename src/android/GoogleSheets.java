@@ -7,25 +7,17 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
-import android.util.Log;
 import android.widget.Toast;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
-import com.google.api.client.extensions.android.http.AndroidHttp;
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential;
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException;
-import com.google.api.client.json.jackson2.JacksonFactory;
-import com.google.api.client.util.ExponentialBackOff;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
-import com.google.api.services.sheets.v4.model.*;
-import java.lang.Runnable;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
@@ -34,7 +26,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 public class GoogleSheets extends CordovaPlugin {
-  private static final String TAG = "GOOGLE-SHEETS PLUGIN";
   private static final String MSG_REQUEST_GOOGLE_PLAY_SERVICES = "google_play_services_request";
   private static final String MSG_REQUEST_ACCOUNT_PERMISSION = "account_permission_request";
   private static final String OPT_SIGN_IN = "signIn";
@@ -62,39 +53,21 @@ public class GoogleSheets extends CordovaPlugin {
   static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
   static final int REQUEST_PERMISSION_GET_ACCOUNTS = 1003;
   private static final String PREF_ACCOUNT_NAME = "accountName";
-  private static final String[] SCOPES = {SheetsScopes.SPREADSHEETS};
+  public static final String[] SCOPES = {SheetsScopes.SPREADSHEETS};
   private static String mApplicationName = null;
-  private String mAccountName;
-  private GoogleAccountCredential mCredential;
-  private Activity mActivity;
-  private CallbackContext mCallbackContext;
-  private com.google.api.services.sheets.v4.Sheets mService = null;
+  private AccountOperations mAccountOperations;
   private SheetsOperations mSheetsOperations;
   private ValuesOperations mValuesOperations;
   private SpreadsheetsOperations mSpreadsheetsOperations;
-  private Queue<Runnable> mPausedTasks;
+  private Map<String, Operation> mInterruptedTasks;
 
   @Override
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
     super.initialize(cordova, webView);
-    mActivity = cordova.getActivity();
-    mApplicationName =
-        mApplicationName == null
-            ? getApplicationName(mActivity.getApplicationContext())
-            : mApplicationName;
+    mInterruptedTasks = new HashMap<String, Operation>();
 
-    mAccountName =
-        mActivity.getPreferences(Context.MODE_PRIVATE).getString(PREF_ACCOUNT_NAME, null);
-    mCredential =
-        GoogleAccountCredential.usingOAuth2(
-                mActivity.getApplicationContext(), Arrays.asList(SCOPES))
-            .setBackOff(new ExponentialBackOff());
-
-    mPausedTasks = new LinkedList<>();
-
-    if (mAccountName != null && mAccountName != "") {
-      mCredential.setSelectedAccountName(mAccountName);
-      mService = this.buildClient();
+    if (mAccountOperations == null) {
+      mAccountOperations = AccountOperations.getInstance(this);
     }
 
     if (mSheetsOperations == null) {
@@ -106,48 +79,46 @@ public class GoogleSheets extends CordovaPlugin {
     if (mSpreadsheetsOperations == null) {
       mSpreadsheetsOperations = SpreadsheetsOperations.getInstance(this);
     }
-
-    Log.d(TAG, "@initialize()");
   }
 
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext)
       throws JSONException {
-    mCallbackContext = callbackContext;
-    Runnable runnable = null;
+    Operation runnable = null;
     boolean result = false;
 
     switch (action) {
       case OPT_SIGN_IN:
-        this.signIn();
+        runnable = mAccountOperations.signIn(callbackContext);
         result = true;
         break;
       case OPT_SIGN_OUT:
+        runnable = mAccountOperations.signOut(callbackContext);
         result = true;
         break;
       case OPT_IS_SIGNED_IN:
-        this.isUserSignedIn();
+        runnable = mAccountOperations.isUserSignedIn(callbackContext);
         result = true;
         break;
       case OPT_SPREADSHEETS_BATCH_UPDATE:
-        runnable = mSpreadsheetsOperations.batchUpdate(args);
+        runnable = mSpreadsheetsOperations.batchUpdate(args, callbackContext);
         result = true;
         break;
       case OPT_SPREADSHEETS_CREATE:
-	runnable = mSpreadsheetsOperations.create(args);
+        runnable = mSpreadsheetsOperations.create(args, callbackContext);
         result = true;
         break;
       case OPT_SPREADSHEETS_GET:
-        runnable = mSpreadsheetsOperations.get(args);
+        runnable = mSpreadsheetsOperations.get(args, callbackContext);
         result = true;
         break;
       case OPT_SPREADSHEETS_GET_DATA_FILTER:
-        runnable = mSpreadsheetsOperations.getByDataFilter(args);
+        runnable = mSpreadsheetsOperations.getByDataFilter(args, callbackContext);
         result = true;
         break;
       case OPT_SHEETS_COPY_TO:
         result = true;
-        runnable = mSheetsOperations.copyTo(args);
+        runnable = mSheetsOperations.copyTo(args, callbackContext);
         break;
       case OPT_DEVELOPER_METADATA_GET:
         result = true;
@@ -157,41 +128,41 @@ public class GoogleSheets extends CordovaPlugin {
         break;
       case OPT_VALUES_APPEND:
         result = true;
-        runnable = mValuesOperations.append(args);
+        runnable = mValuesOperations.append(args, callbackContext);
         break;
       case OPT_VALUES_BATCH_GET:
         result = true;
-        runnable = mValuesOperations.batchGet(args);
+        runnable = mValuesOperations.batchGet(args, callbackContext);
         break;
       case OPT_VALUES_BATCH_CLEAR:
         result = true;
-        runnable = mValuesOperations.batchClear(args);
+        runnable = mValuesOperations.batchClear(args, callbackContext);
         break;
       case OPT_VALUES_BATCH_CLEAR_DATA_FILTER:
         result = true;
-        runnable = mValuesOperations.batchClearByDataFilter(args);
+        runnable = mValuesOperations.batchClearByDataFilter(args, callbackContext);
         break;
       case OPT_VALUES_BATCH_GET_DATA_FILTER:
         result = true;
         break;
       case OPT_VALUES_BATCH_UPDATE:
         result = true;
-        runnable = mValuesOperations.batchUpdate(args);
+        runnable = mValuesOperations.batchUpdate(args, callbackContext);
         break;
       case OPT_VALUES_BATCH_UPDATE_DATA_FILTER:
         result = true;
         break;
       case OPT_VALUES_CLEAR:
         result = true;
-        runnable = mValuesOperations.clear(args);
+        runnable = mValuesOperations.clear(args, callbackContext);
         break;
       case OPT_VALUES_GET:
         result = true;
-        runnable = mValuesOperations.get(args);
+        runnable = mValuesOperations.get(args, callbackContext);
         break;
       case OPT_VALUES_UPDATE:
         result = true;
-        runnable = mValuesOperations.update(args);
+        runnable = mValuesOperations.update(args, callbackContext);
         break;
     }
     if (runnable != null) {
@@ -200,92 +171,14 @@ public class GoogleSheets extends CordovaPlugin {
     return result;
   }
 
-  public Sheets buildClient() {
-    return new com.google.api.services.sheets.v4.Sheets.Builder(
-            AndroidHttp.newCompatibleTransport(), JacksonFactory.getDefaultInstance(), mCredential)
-        .setApplicationName(mApplicationName)
-        .build();
-  }
-
-  public String getApplicationName(Context context) {
-    ApplicationInfo appInfo = context.getApplicationInfo();
-    int stringId = appInfo.labelRes;
-    String appName =
-        stringId == 0 ? appInfo.nonLocalizedLabel.toString() : context.getString(stringId);
-    return appName;
-  }
-
-  private void signIn() {
-    if (hasAccountPermissions()) {
-      if (mAccountName == null) {
-        chooseAccount();
-      } else if (mService == null) {
-        mCredential.setSelectedAccountName(mAccountName);
-        mService = buildClient();
-        mCallbackContext.success("signed in as " + mAccountName);
-      }
-    } else {
-      askForAccountPermission();
-    }
-    String values = String.format("mAccountName: %s", mAccountName);
-    Log.d(TAG, "@signIn() " + values);
-  }
-
-  private void signOut(String message, CallbackContext callbackContext) {
-    if (message != null && message.length() > 0) {
-      callbackContext.success(message);
-    } else {
-      callbackContext.error("Expected one non-empty string argument.");
-    }
-  }
-
-  private GoogleSheets getSelfReference() {
-    return this;
-  }
-
-  private void executeOnBackground(Runnable task) {
+  private void executeOnBackground(Operation task) {
     if (!isGooglePlayServicesAvailable()) {
       acquireGooglePlayServices();
       cordova.getThreadPool().execute(task);
     } else if (!isDeviceOnline()) {
-    } else if (mCredential.getSelectedAccountName() == null) {
     } else {
       cordova.getThreadPool().execute(task);
     }
-  }
-
-  /** Returns true if the user already granted permission to access their contacts. */
-  public boolean hasAccountPermissions() {
-    return cordova.hasPermission(Manifest.permission.GET_ACCOUNTS);
-  }
-
-  /**
-   * Attempts to set the account used with the API credentials. If an account name was previously
-   * saved it will use that one; otherwise an account picker dialog will be shown to the user. Note
-   * that the setting the account to use with the credentials object requires the app to have the
-   * GET_ACCOUNTS permission, which is requested here if it is not already present.
-   */
-  private void chooseAccount() {
-
-    if (hasAccountPermissions()) {
-      mAccountName =
-          mActivity.getPreferences(Context.MODE_PRIVATE).getString(PREF_ACCOUNT_NAME, null);
-      if (mAccountName == null) {
-        // Start a dialog from which the user can choose an account
-        cordova.startActivityForResult(
-            this, mCredential.newChooseAccountIntent(), REQUEST_ACCOUNT_PICKER);
-      } else {
-        mCredential.setSelectedAccountName(mAccountName);
-      }
-    } else {
-      askForAccountPermission();
-    }
-    Log.d(TAG, "@chooseAccount() mAccountName: " + mAccountName);
-  }
-
-  private void askForAccountPermission() {
-    cordova.requestPermission(
-        this, REQUEST_PERMISSION_GET_ACCOUNTS, Manifest.permission.GET_ACCOUNTS);
   }
 
   private String getStringResource(String resourceName) {
@@ -301,14 +194,19 @@ public class GoogleSheets extends CordovaPlugin {
       case REQUEST_ACCOUNT_PICKER:
         if (resultCode == Activity.RESULT_OK && data != null && data.getExtras() != null) {
           String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
+          String callbackId = data.getStringExtra(Operation.INTERRUPTED_OPERATION);
           if (accountName != null) {
             SharedPreferences settings = mActivity.getPreferences(Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = settings.edit();
             editor.putString(PREF_ACCOUNT_NAME, accountName);
             editor.apply();
-            mCredential.setSelectedAccountName(accountName);
-            mService = buildClient();
-            mCallbackContext.success("signed in as" + accountName);
+          }
+          if (callbackId != null) {
+            Operation task = mInterruptedTasks.get(callbackId);
+            if (task != null) {
+              mInterruptedTasks.remove(task);
+              executeOnBackground(task);
+            }
           }
         }
         break;
@@ -322,11 +220,14 @@ public class GoogleSheets extends CordovaPlugin {
         break;
       case REQUEST_AUTHORIZATION:
         if (resultCode == Activity.RESULT_OK) {
-          if (!mPausedTasks.isEmpty()) {
-            executeOnBackground(mPausedTasks.remove());
+          String callbackId = data.getStringExtra(Operation.INTERRUPTED_OPERATION);
+          if (callbackId != null) {
+            Operation interruptedTask = mInterruptedTasks.get(callbackId);
+            if (interruptedTask != null) {
+              mInterruptedTasks.remove(interruptedTask);
+              executeOnBackground(interruptedTask);
+            }
           }
-        } else {
-          mPausedTasks = new LinkedList<>();
         }
         break;
     }
@@ -337,7 +238,17 @@ public class GoogleSheets extends CordovaPlugin {
       throws JSONException {
     switch (requestCode) {
       case REQUEST_PERMISSION_GET_ACCOUNTS:
-        chooseAccount();
+        Operation task = mInterruptedTasks.get(AccountOperations.ACCOUNT_PERMISSION_INTERRUPTED);
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+          if (task != null) {
+            mInterruptedTasks.remove(task);
+            executeOnBackground(task);
+          }
+        } else {
+          if (task != null) {
+            mInterruptedTasks.remove(task);
+          }
+        }
         break;
     }
   }
@@ -392,30 +303,61 @@ public class GoogleSheets extends CordovaPlugin {
     dialog.show();
   }
 
-  public void isUserSignedIn() {
-    if (mAccountName != null && mAccountName.length() != 0) {
-      mCallbackContext.success(mAccountName);
-    } else {
-      mCallbackContext.error("No user signed in");
-    }
+  /** Returns true if the user already granted permission to access their contacts. */
+  public boolean hasAccountPermissions() {
+    return cordova.hasPermission(Manifest.permission.GET_ACCOUNTS);
   }
 
-  public Sheets getService() {
-    if (mService == null) {
-      mService = this.buildClient();
-    }
-    return mService;
+  public Sheets getService() throws UserNotSignedIn {
+    return mAccountOperations.getService();
   }
 
-  public CallbackContext getCallbackContext() {
-    return mCallbackContext;
-  }
-
-  public void requestAuthorization(UserRecoverableAuthIOException except, Runnable task) {
+  public void handle(Operation task, CallbackContext context, Exception except) {
     if (except instanceof UserRecoverableAuthIOException) {
-      mPausedTasks.add(task);
-      cordova.startActivityForResult(
-          getSelfReference(), (except).getIntent(), REQUEST_AUTHORIZATION);
+      String callbackId = context.getCallbackId();
+      mInterruptedTasks.put(callbackId, task);
+      startActivityForResult(
+          ((UserRecoverableAuthIOException) except)
+              .getIntent()
+              .putExtra(Operation.INTERRUPTED_OPERATION, callbackId),
+          REQUEST_AUTHORIZATION);
+    } else {
+      context.error(findErrorMessage(except));
     }
+  }
+
+  public void askForAccountPermission(Operation task) {
+    mInterruptedTasks.put(AccountOperations.ACCOUNT_PERMISSION_INTERRUPTED, task);
+    cordova.requestPermission(
+        this, REQUEST_PERMISSION_GET_ACCOUNTS, Manifest.permission.GET_ACCOUNTS);
+  }
+
+  private void startActivityForResult(Intent intent, int requestCode) {
+    cordova.startActivityForResult(this, intent, requestCode);
+  }
+
+  public void chooseAccount(Operation task, CallbackContext context, Intent intent) {
+    String callbackId = context.getCallbackId();
+    mInterruptedTasks.put(callbackId, task);
+    startActivityForResult(
+        intent.putExtra(Operation.INTERRUPTED_OPERATION, callbackId), REQUEST_ACCOUNT_PICKER);
+  }
+
+  public CordovaInterface getCordova() {
+    return cordova;
+  }
+
+  private String findErrorMessage(Throwable e) {
+    String errMessage;
+    if (e.getMessage() != null && e.getMessage() != "") {
+      errMessage = e.getMessage();
+    } else {
+      if (e.getCause() != null) {
+        errMessage = findErrorMessage(e.getCause());
+      } else {
+        errMessage = "No helpful message found in exception.getMessage()";
+      }
+    }
+    return errMessage;
   }
 }
