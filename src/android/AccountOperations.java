@@ -67,22 +67,23 @@ public class AccountOperations extends OperationsProvider {
 
       @Override
       public void run() {
-        String accountName =
-            mPlugin
-                .getCordova()
-                .getActivity()
-                .getPreferences(Context.MODE_PRIVATE)
-                .getString(PREF_ACCOUNT_NAME, null);
-        if (accountName == null) {
-          if (mPlugin.hasAccountPermissions()) {
+        String accountName;
+        if (mPlugin.hasAccountPermissions()) {
+          accountName =
+              mPlugin
+                  .getCordova()
+                  .getActivity()
+                  .getPreferences(Context.MODE_PRIVATE)
+                  .getString(PREF_ACCOUNT_NAME, null);
+          if (accountName == null) {
             mPlugin.chooseAccount(this, callbackContext, mCredential.newChooseAccountIntent());
           } else {
-            mPlugin.askForAccountPermission(this);
+              mCredential.setSelectedAccountName(accountName);
+              mService = buildClient();
+              callbackContext.success("signed in as " + mAccountName);
           }
         } else {
-          mCredential.setSelectedAccountName(accountName);
-          mService = buildClient();
-          callbackContext.success("signed in as " + mAccountName);
+          mPlugin.askForAccountPermission(this);
         }
       }
 
@@ -115,11 +116,11 @@ public class AccountOperations extends OperationsProvider {
         if (accountName != "" && accountName != null) {
           setCredential();
           mService = null;
-          callbackContext.success("Succesfully signed out");
           SharedPreferences settings = mActivity.getPreferences(Context.MODE_PRIVATE);
           SharedPreferences.Editor editor = settings.edit();
-          editor.putString(PREF_ACCOUNT_NAME, accountName);
+          editor.putString(PREF_ACCOUNT_NAME, null);
           editor.apply();
+          callbackContext.success("Succesfully signed out");
         } else {
           callbackContext.error("Already signed out");
         }
