@@ -11,14 +11,13 @@ import com.google.api.services.sheets.v4.model.ClearValuesRequest;
 import com.google.api.services.sheets.v4.model.ClearValuesResponse;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
-import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException;
-import java.lang.Runnable;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.cordova.CallbackContext;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class ValuesOperations extends Operations {
+public class ValuesOperations extends OperationsProvider {
   private GoogleSheets mPlugin;
   private static ValuesOperations mInstance;
   public static String STR_DEFAULT_MAJOR_DIMENSION_OPT = "ROWS";
@@ -38,8 +37,9 @@ public class ValuesOperations extends Operations {
     return mInstance;
   }
 
-  public Runnable append(final JSONArray params) {
-    return new Runnable() {
+  public Operation append(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -64,28 +64,27 @@ public class ValuesOperations extends Operations {
           Sheets sheetsService = mPlugin.getService();
           Sheets.Spreadsheets.Values.Append request =
               sheetsService.spreadsheets().values().append(spreadsheetId, range, requestBody);
-          if (!isCordovaNullable(valueInputOption)) {
+          if (isCordovaNullable(valueInputOption)) {
             valueInputOption = ValuesOperations.DEFAULT_VALUE_INPUT_OPTION;
           }
-          if (!isCordovaNullable(insertDataOption)) {
+          if (isCordovaNullable(insertDataOption)) {
             insertDataOption = ValuesOperations.DEFAULT_INSERT_DATA_OPTION;
           }
           request.setValueInputOption(valueInputOption);
           request.setInsertDataOption(insertDataOption);
 
           AppendValuesResponse response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable batchClear(final JSONArray params) {
-    return new Runnable() {
+  public Operation batchClear(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -104,31 +103,35 @@ public class ValuesOperations extends Operations {
               sheetsService.spreadsheets().values().batchClear(spreadsheetId, requestBody);
 
           BatchClearValuesResponse response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable batchClearByDataFilter(final JSONArray params) {
-    return new Runnable() {
+  public Operation batchClearByDataFilter(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         /*TODO: implement data filter mechanisms.
         try {
-        } catch (Exception e) {
+        } catch (Exception exception) {
         }
         */
-        mPlugin.getCallbackContext().error("Not implemented yet...");
+        mPlugin.handle(
+            this,
+            context,
+            new UnsupportedOperationException(
+                "ValuesOperations' batchClearByDataFilter has not been implemented yet"));
       }
     };
   }
 
-  public Runnable batchGet(final JSONArray params) {
-    return new Runnable() {
+  public Operation batchGet(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -136,7 +139,7 @@ public class ValuesOperations extends Operations {
           String majorDimension = params.getString(2);
           String valueRenderOption = params.getString(3);
           String dateTimeRenderOption = params.getString(4);
-          List<String> rangesList = new ArrayList();
+          List<String> rangesList = new ArrayList<String>();
 
           for (int i = 0; i < spreadsheetRanges.length(); i++) {
             rangesList.add(spreadsheetRanges.getString(i));
@@ -153,31 +156,35 @@ public class ValuesOperations extends Operations {
             request.setDateTimeRenderOption(dateTimeRenderOption);
           }
           BatchGetValuesResponse response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable batchGetByDataFilter(final JSONArray params) {
-    return new Runnable() {
+  public Operation batchGetByDataFilter(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         /* TODO: implement data filter mechanisms.
         try {
-        } catch (Exception e) {
+        } catch (Exception exception) {
         }
         */
-        mPlugin.getCallbackContext().error("Not implemented yet");
+        mPlugin.handle(
+            this,
+            context,
+            new UnsupportedOperationException(
+                "ValuesOperations' batchClearByDataFilter has not been implemented yet"));
       }
     };
   }
 
-  public Runnable batchUpdate(final JSONArray params) {
-    return new Runnable() {
+  public Operation batchUpdate(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -215,19 +222,18 @@ public class ValuesOperations extends Operations {
 
           BatchUpdateValuesResponse response = request.execute();
 
-          mPlugin.getCallbackContext().success(response.toString());
+          context.success(response.toString());
 
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable clear(final JSONArray params) {
-    return new Runnable() {
+  public Operation clear(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -240,18 +246,17 @@ public class ValuesOperations extends Operations {
               sheetsService.spreadsheets().values().clear(spreadsheetId, range, requestBody);
 
           ClearValuesResponse response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().success(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable get(final JSONArray params) {
-    return new Runnable() {
+  public Operation get(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -262,18 +267,17 @@ public class ValuesOperations extends Operations {
           request.setValueRenderOption(ValuesOperations.DEFAULT_VALUE_RENDER_OPTION);
 
           ValueRange response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
   }
 
-  public Runnable update(final JSONArray params) {
-    return new Runnable() {
+  public Operation update(final JSONArray params, final CallbackContext context) {
+    return new Operation() {
+      @Override
       public void run() {
         try {
           String spreadsheetId = params.getString(0);
@@ -299,11 +303,9 @@ public class ValuesOperations extends Operations {
           request.setValueInputOption(ValuesOperations.DEFAULT_VALUE_INPUT_OPTION);
 
           UpdateValuesResponse response = request.execute();
-          mPlugin.getCallbackContext().success(response.toString());
-        } catch (UserRecoverableAuthIOException authExcept) {
-          mPlugin.requestAuthorization(authExcept, this);
-        } catch (Exception e) {
-          mPlugin.getCallbackContext().error(e.getMessage());
+          context.success(response.toString());
+        } catch (Exception exception) {
+          mPlugin.handle(this, context, exception);
         }
       }
     };
