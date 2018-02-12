@@ -182,8 +182,8 @@ public class GoogleSheets extends CordovaPlugin {
   }
 
   private String getStringResource(String resourceName) {
-    return mActivity.getString(
-        mActivity.getResources().getIdentifier(resourceName, "string", mActivity.getPackageName()));
+    return cordova.getActivity().getString(
+        cordova.getActivity().getResources().getIdentifier(resourceName, "string", cordova.getActivity().getPackageName()));
   }
 
   /** Handles results from activities started from here. */
@@ -196,7 +196,7 @@ public class GoogleSheets extends CordovaPlugin {
           String accountName = data.getStringExtra(AccountManager.KEY_ACCOUNT_NAME);
           String callbackId = data.getStringExtra(Operation.INTERRUPTED_OPERATION);
           if (accountName != null) {
-            SharedPreferences settings = mActivity.getPreferences(Context.MODE_PRIVATE);
+            SharedPreferences settings = cordova.getActivity().getPreferences(Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = settings.edit();
             editor.putString(PREF_ACCOUNT_NAME, accountName);
             editor.apply();
@@ -214,7 +214,7 @@ public class GoogleSheets extends CordovaPlugin {
         if (resultCode != Activity.RESULT_OK) {
           String message =
               String.format(getStringResource(MSG_REQUEST_GOOGLE_PLAY_SERVICES), mApplicationName);
-          Toast.makeText(mActivity.getApplicationContext(), message, Toast.LENGTH_SHORT).show();
+          Toast.makeText(cordova.getActivity().getApplicationContext(), message, Toast.LENGTH_SHORT).show();
         } else {
         }
         break;
@@ -260,7 +260,7 @@ public class GoogleSheets extends CordovaPlugin {
    */
   private boolean isDeviceOnline() {
     ConnectivityManager connMgr =
-        (ConnectivityManager) mActivity.getSystemService(Context.CONNECTIVITY_SERVICE);
+        (ConnectivityManager) cordova.getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
     NetworkInfo networkInfo = connMgr.getActiveNetworkInfo();
     return (networkInfo != null && networkInfo.isConnected());
   }
@@ -273,7 +273,7 @@ public class GoogleSheets extends CordovaPlugin {
    */
   private boolean isGooglePlayServicesAvailable() {
     GoogleApiAvailability apiAvailability = GoogleApiAvailability.getInstance();
-    final int connectionStatusCode = apiAvailability.isGooglePlayServicesAvailable(mActivity);
+    final int connectionStatusCode = apiAvailability.isGooglePlayServicesAvailable(cordova.getActivity());
     return connectionStatusCode == ConnectionResult.SUCCESS;
   }
 
@@ -283,7 +283,7 @@ public class GoogleSheets extends CordovaPlugin {
    */
   private void acquireGooglePlayServices() {
     GoogleApiAvailability apiAvailability = GoogleApiAvailability.getInstance();
-    final int connectionStatusCode = apiAvailability.isGooglePlayServicesAvailable(mActivity);
+    final int connectionStatusCode = apiAvailability.isGooglePlayServicesAvailable(cordova.getActivity());
     if (apiAvailability.isUserResolvableError(connectionStatusCode)) {
       showGooglePlayServicesAvailabilityErrorDialog(connectionStatusCode);
     }
@@ -299,7 +299,7 @@ public class GoogleSheets extends CordovaPlugin {
     GoogleApiAvailability apiAvailability = GoogleApiAvailability.getInstance();
     Dialog dialog =
         apiAvailability.getErrorDialog(
-            mActivity, connectionStatusCode, REQUEST_GOOGLE_PLAY_SERVICES);
+            cordova.getActivity(), connectionStatusCode, REQUEST_GOOGLE_PLAY_SERVICES);
     dialog.show();
   }
 
